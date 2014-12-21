@@ -1,19 +1,6 @@
-// LAUNCH CODE
-//
-// <script>
-//    window.API_1484_11 = SimpleScorm2004.start(
-//        http://my_callback_url,
-//        lms_registration_data,
-//        previous_scorm_state);
-//    window.API_1484_11.SimpleScorm_SetReturn('<%= returl %>');
-//    </script>
-//
-// lms_registration_data - Whatever you need to track the user/session
-// previous_scorm_state  - {} or Continue Data from PostData
-
 // Safe Console Logging for older browsers
 function log(msg) {
-  if (window.console) console.log(msg);
+  if (window.console && SimpleScorm2004.logging_enabled) console.log(msg);
 }
 
 var SimpleScorm2004 = {
@@ -24,16 +11,15 @@ var SimpleScorm2004 = {
   //  cmi.mode:               browse, normal, review
   //
 
-  data : {
-    interactions : []
-  },
-  registration : null
-  last_error : 0,
-  last_error_string : "",
-  saved_raw_score : 0,
-  callback_url : null,
-  lastTransmit : null,
-  terminated   : false,
+  data : { interactions : [] },
+  last_error:         0,
+  last_error_string:  "",
+  saved_raw_score:    0,
+  lastTransmit:       null,
+  terminated:         false,
+  on_data:            null,
+  on_complete:        null,
+  logging_enabled:    false,
 
   //////////////////////////////////////////////////////////////////
   //
@@ -42,16 +28,17 @@ var SimpleScorm2004 = {
   //
   //
 
-  start: function(callback_url, registration_data, scorm_data) {
+  start: function(scorm_data, on_data, on_complete) {
+    log("Starting Simple Scorm")
     // a few defaults
     this.data['cmi.success_status'] = 'unknown';
     this.data['cmi.completion_status'] = 'not attempted';
     this.data['cmi.mode'] = 'normal';
-    this.registration = registration;
     for (var key in scorm_data) {
       this.data[key] = scorm_data[key];
     }
-    this.callback_url = callback_url;
+    this.on_data = on_data;
+    this.on_complete = on_complete;
     return this;
   },
 
@@ -73,15 +60,9 @@ var SimpleScorm2004 = {
     this.terminated = true;
     this.SimpleScorm_ResetError();
     log("SimpleScorm2004::Terminate");
-
-    // We used to re-post data on terminate
-    // but storyline2 has a reentrant problem
-    // with this
-
     setTimeout(function() {
-      document.location = this.returnURL;
+      SimpleScorm2004.on_complete();
     },100);
-
     return "true"
   },
 
@@ -166,7 +147,7 @@ var SimpleScorm2004 = {
     if (this.lastTransmit) {
       var current = new Date().getTime();
       var diff = current - this.lastTransmit;
-      /* Over 5 minutes? */
+      /* Over 5 minutes? Keep Alive */
       if (diff > 300000) {
         this.SimpleScorm_PostData();
       }
@@ -182,11 +163,6 @@ var SimpleScorm2004 = {
     return interactionCount;
   },
 
-  // Set the return URL for when the content is done
-  SimpleScorm_SetReturn : function(returnURL) {
-    this.returnURL = returnURL;
-  },
-
   // Reset the last error
   SimpleScorm_ResetError : function() {
     this.last_error = 0;
@@ -194,29 +170,10 @@ var SimpleScorm2004 = {
   },
 
   // Post to the LMS
-  SimpleScorm_PostData : function(callback) {
-
+  SimpleScorm_PostData : function() {
     log("SimpleScorm2004::SimpleScorm_PostData");
     this.lastTransmit = new Date().getTime();
-
-    if (this.callback_url.length > 0) {
-      $.ajax({
-        type: 'put',
-        url:  this.callback_url,
-        data: this.data,
-        success: function(data) {
-          if (callback != null) {
-            callback();
-          }
-        },
-        error: function(jqXHR, textStatus, errorThrown) {
-          // TBD
-        }
-      });
-
-    } else if (callback != null) {
-      callback();
-    }
+    SimpleScorm2004.on_data(this.data);
   }
 
 }
